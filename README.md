@@ -2,6 +2,7 @@ Yellow Cab Project
 ==================
 
 1. Goal 
+
     Write a paper, submit it to 
     [Journal of Management Science and Engineering](http://www.keaipublishing.com/en/journals/journal-of-management-science-and-engineering), 
     Applications of Data-Driven Optimization in Management Science.
