@@ -62,8 +62,24 @@ class DataProcessor:
                 return self._data.loc[self._data['PULocationID'].astype('int64') == location]
 
     def filter_pickup_time(self, start: int, end: int):
-        assert isinstance(start, int), f'invalid start type: {type(start)}'
+        assert isinstance(start, int), f'invalid \'start\' type: {type(start)}'
+        assert isinstance(end, int), f'invalid \'end\' type: {type(end)}'
+        assert 0 <= start < end <= 12, f'invalid start={start} and end={end}'
+
         hour_lst = self._data.loc[:, 'tpep_pickup_datetime'].apply(func=lambda x: x.hour)
+        return self._data.loc[(hour_lst >= start) & (hour_lst < end)]
+
+    def filter_weekday(self, weekend: bool = False):
+        assert isinstance(weekend, bool), f'invalid \'weekend\' type: {type(weekend)}'
+
+        day_lst = self._data.loc[:, 'tpep_pickup_datetime'].apply(func=lambda x: x.weekday())
+        if weekend:
+            return self._data.loc[day_lst >= 5]
+        return self._data.loc[day_lst < 5]
+
+    def sort_by(self, by: str, ascending: bool = True):
+        assert isinstance(by, str), f'invalid \'by\' type: {type(by)}'
+        return self._data.sort_values(by=by, ascending=ascending)
 
 
 
