@@ -156,7 +156,10 @@ def get_interarrival_time(data: pd.DataFrame, aam: float, pickup: int, dropoff: 
     selected = data.loc[pickup & dropoff]
     trip_time = selected.tpep_dropoff_datetime - selected.tpep_pickup_datetime
     trip_time = trip_time.apply(lambda x: x.total_seconds())
-    trip_time = trip_time.loc[(trip_time > 0) & (trip_time < 7200)]
+    try:
+        trip_time = trip_time.loc[(trip_time > 0) & (trip_time < 7200)]
+    except TypeError:
+        pass
 
     if np.isnan(aam) or len(trip_time) < 1:
         return np.nan
@@ -166,15 +169,17 @@ def get_interarrival_time(data: pd.DataFrame, aam: float, pickup: int, dropoff: 
 if __name__ == '__main__':
 
     dp = DataProcessor(data=FILE, loc_zone=ZONE)
-    print(len(dp.data.index))
     dp.filter_pickup_location('Manhattan')
     dp.filter_dropoff_location('Manhattan')
     dp.filter_pickup_time(start=8, end=9)
     dp.filter_weekday()
-    print(len(dp.data.index))
 
-
-
-
-
-
+    dat = dp.data
+    pu_lst = dat.PULocationID.unique()
+    do_lst = dat.DOLocationID.unique()
+    aam = pd.DataFrame(index=pu_lst, columns=do_lst)
+    iat = pd.DataFrame(index=pu_lst, columns=do_lst)
+    for pu in pu_lst:
+        for do in do_lst:
+            aam.loc[pu, do] = get_average_arrival_time(dat, pu, do)
+            iat.loc[pu, do] = get_interarrival_time(dat, aam.loc[pu, do], pu, do)
