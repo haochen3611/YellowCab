@@ -49,7 +49,7 @@ def get_download_path(source):
     return csv_path, zone_path
 
 
-def download_file(url, target_dir, lock):
+def download_file(url, target_dir):
     name = url.split('/')[-1]
     file = requests.get(url, stream=False)
     lock.acquire()
@@ -71,18 +71,24 @@ def download_file(url, target_dir, lock):
         return name
 
 
+def init(lk):
+    global lock
+    lock = lk
+
+
 def download_file_parallel(num_core):
     lk = mp.Lock()
     csv_path, zone_path = get_download_path(URL)
+    init(lk)
+    zone_name = download_file(zone_path, DATA_DIR)
 
-    zone_name = download_file(zone_path, DATA_DIR, lk)
-
-    item = [(csv, RAW_DIR, lk) for csv in csv_path]
-    with mp.Pool(num_core) as pool:
+    item = [(csv, RAW_DIR) for csv in csv_path]
+    with mp.Pool(num_core,
+                 initializer=init, initargs=(lk, )) as pool:
         data_names = pool.starmap(download_file, item)
 
     return data_names, zone_name
 
 
 if __name__ == '__main__':
-    print(get_download_path(URL)[1])
+    download_file_parallel(1)

@@ -194,9 +194,15 @@ def data_process_routine(data_file, zone_file):
     if year is not None and month is not None:
         aam.to_csv(os.path.join(AAM_DIR, f'aam-{year}-{month}.csv'), na_rep='NA', line_terminator='\n')
         iat.to_csv(os.path.join(ATM_DIR, f'atm-{year}-{month}.csv'), na_rep='NA', line_terminator='\n')
+        lock.acquire()
+        print(f'{year}-{month}-done!')
+        lock.release()
     else:
         aam.to_csv(os.path.join(AAM_DIR, f'aam-{data_file}.csv'), na_rep='NA', line_terminator='\n')
         iat.to_csv(os.path.join(ATM_DIR, f'atm-{data_file}.csv'), na_rep='NA', line_terminator='\n')
+        lock.acquire()
+        print(f'{data_file}-done!')
+        lock.release()
 
 
 def parse_date_from_filename(fname):
@@ -211,11 +217,18 @@ def parse_date_from_filename(fname):
     return year, month
 
 
+def init(lk):
+    global lock
+    lock = lk
+
+
 if __name__ == '__main__':
     from download_data import download_file_parallel, RAW_DIR, DATA_DIR, AAM_DIR, ATM_DIR
     import multiprocessing as mp
 
-    data_files, zone_file = download_file_parallel(4)
-    items = [(df, zone_file) for df in data_files]
-    with mp.Pool(mp.cpu_count()) as pool:
+    lk_ = mp.Lock()
+    data_files, zone_file_ = download_file_parallel(4)
+    items = [(df, zone_file_) for df in data_files]
+    with mp.Pool(mp.cpu_count(),
+                 initializer=init, initargs=(lk_, )) as pool:
         pool.starmap(data_process_routine, items)
