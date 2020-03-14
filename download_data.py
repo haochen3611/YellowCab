@@ -41,7 +41,7 @@ def get_download_path(source):
         z = zone_parser.search(csv.text)
         if z is not None:
             zone_path = z.string.split(' ')
-            zone_path = '+'.join(zone_path)
+            zone_path = URL + '+'.join(zone_path)
         if s is not None:
             seg = s.string.split(' ')
             seg = '+'.join(seg)
