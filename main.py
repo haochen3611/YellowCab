@@ -8,7 +8,7 @@ import time
 import argparse as ap
 from util import download_file_parallel, \
         DATA_DIR, AAM_DIR, ATM_DIR, set_destination, parse_date_from_filename, \
-    get_csv_file_from_dir, filter_csv_file_by_time
+        get_csv_file_from_dir, filter_csv_file_by_time
 import multiprocessing as mp
 
 
@@ -18,6 +18,11 @@ ZONE = 'data/taxi+_zone_lookup.csv'
 
 class DataProcessor:
     DTYPE = []
+    COL_MAP = {'pickup_datetime': 'tpep_pickup_datetime',
+               'Trip_Pickup_DateTime': 'tpep_pickup_datetime',
+               'dropoff_datetime': 'tpep_dropoff_datetime',
+               'Trip_Dropoff_DateTime': 'tpep_dropoff_datetime',
+               'Trip_Distance': 'trip_distance'}
 
     def __init__(self, data: Union[str, pd.DataFrame], **kwargs):
         assert isinstance(data, (str, pd.DataFrame)), f'invalid file type: {type(data)}, need \'str\' or \'dataframe\''
@@ -61,6 +66,7 @@ class DataProcessor:
                 return [DataProcessor(data=ag) for ag in args]
 
     def _simple_process(self):
+        self._data = self._data.rename(columns=self.COL_MAP)
         self._data.loc[:, 'tpep_pickup_datetime'] = pd.to_datetime(self.data.loc[:, 'tpep_pickup_datetime'])
         self._data.loc[:, 'tpep_dropoff_datetime'] = pd.to_datetime((self.data.loc[:, 'tpep_dropoff_datetime']))
         self._data.loc[:, 'trip_time'] = (self._data.tpep_dropoff_datetime - self._data.tpep_pickup_datetime)\
@@ -196,7 +202,7 @@ def data_process_routine(data_file, zone_file, weekday=True, start_time=0, locat
         for do in do_lst:
             aam.loc[pu, do] = get_average_arrival_time(dat, pu, do)
             iat.loc[pu, do] = get_interarrival_time(dat, aam.loc[pu, do], pu, do)
-    wkd = 'wd' if weekday else 'we'
+    wkd = 'wd' if weekday else 'wn'
 
     if year is not None and month is not None:
         aam.to_csv(os.path.join(AAM_DIR, f'aam-{year}-{month}-{start_time}-{wkd}.csv'),
@@ -204,7 +210,7 @@ def data_process_routine(data_file, zone_file, weekday=True, start_time=0, locat
         iat.to_csv(os.path.join(ATM_DIR, f'atm-{year}-{month}-{start_time}-{wkd}.csv'),
                    na_rep='NA', line_terminator='\n')
         lock.acquire()
-        print(f'{year}-{month}-done!')
+        print(f'{year}-{month}-{start_time}-{wkd}...done!')
         lock.release()
     else:
         aam.to_csv(os.path.join(AAM_DIR, f'aam-{data_file}-{start_time}-{wkd}.csv'),
@@ -212,7 +218,7 @@ def data_process_routine(data_file, zone_file, weekday=True, start_time=0, locat
         iat.to_csv(os.path.join(ATM_DIR, f'atm-{data_file}-{start_time}-{wkd}.csv'),
                    na_rep='NA', line_terminator='\n')
         lock.acquire()
-        print(f'{data_file}-done!')
+        print(f'{data_file}-{start_time}-{wkd}...done!')
         lock.release()
 
 
@@ -227,8 +233,8 @@ if __name__ == '__main__':
     par.add_argument('--dest', nargs='?', metavar='<RAW DATA DIR>', type=str, default=None)
     par.add_argument('--dl_threads', nargs='?', metavar='<DOWNLOAD THREADS>', type=int, default=2)
     par.add_argument('--dp_threads', nargs='?', metavar='<PROCESS THREADS>', type=int, default=mp.cpu_count())
-    par.add_argument('--dp', nargs='?', action='store_true', default=False, dest='run_dp')
-    par.add_argument('--dl', nargs='?', action='store_true', default=False, dest='run_dl')
+    par.add_argument('--dp', action='store_true', default=False, dest='run_dp')
+    par.add_argument('--dl', action='store_true', default=False, dest='run_dl')
 
     arg = par.parse_args()
 
