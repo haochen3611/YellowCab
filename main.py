@@ -1,9 +1,12 @@
 import pandas as pd
 from typing import Union
 import numpy as np
+import os
+import re
+import time
 
 
-FILE = 'data/yellow_tripdata_2019-12.csv'
+FILE = 'data/raw/yellow_tripdata_2019-12.csv'
 ZONE = 'data/taxi+_zone_lookup.csv'
 
 
@@ -54,6 +57,10 @@ class DataProcessor:
     def _simple_process(self):
         self._data.loc[:, 'tpep_pickup_datetime'] = pd.to_datetime(self.data.loc[:, 'tpep_pickup_datetime'])
         self._data.loc[:, 'tpep_dropoff_datetime'] = pd.to_datetime((self.data.loc[:, 'tpep_dropoff_datetime']))
+        self._data.loc[:, 'trip_time'] = (self._data.tpep_dropoff_datetime - self._data.tpep_pickup_datetime)\
+            .apply(lambda x: x.total_seconds())
+        self._data = self._data.loc[(self._data.trip_time > 60) & (self._data.trip_time < 7200)]
+        self._data = self._data.loc[(self._data.trip_distance > 0.1) & (self._data.trip_distance < 20)]
 
     def _process_zone_table(self):
         assert isinstance(self._loc_zone_table, (str, pd.DataFrame, dict)), \
@@ -110,7 +117,7 @@ class DataProcessor:
     def filter_pickup_time(self, start: int, end: int, inplace: bool = True):
         assert isinstance(start, int), f'invalid \'start\' type: {type(start)}'
         assert isinstance(end, int), f'invalid \'end\' type: {type(end)}'
-        assert 0 <= start < end <= 12, f'invalid start={start} and end={end}'
+        assert 0 <= start < end <= 24, f'invalid start={start} and end={end}'
 
         hour_lst = self._data.loc[:, 'tpep_pickup_datetime'].apply(func=lambda x: x.hour)
         filtered = self._data.loc[(hour_lst >= start) & (hour_lst < end)]
@@ -154,21 +161,21 @@ def get_interarrival_time(data: pd.DataFrame, aam: float, pickup: int, dropoff: 
     pickup = data.loc[:, 'PULocationID'] == pickup
     dropoff = data.loc[:, 'DOLocationID'] == dropoff
     selected = data.loc[pickup & dropoff]
-    trip_time = selected.tpep_dropoff_datetime - selected.tpep_pickup_datetime
-    trip_time = trip_time.apply(lambda x: x.total_seconds())
-    try:
-        trip_time = trip_time.loc[(trip_time > 0) & (trip_time < 7200)]
-    except TypeError:
-        pass
+    trip_time = selected.trip_time
 
     if np.isnan(aam) or len(trip_time) < 1:
         return np.nan
     return trip_time.mean()
 
 
-if __name__ == '__main__':
-
-    dp = DataProcessor(data=FILE, loc_zone=ZONE)
+def data_process_routine(data_file, zone_file):
+    try:
+        year, month = parse_date_from_filename(data_file)
+    except ValueError:
+        year, month = None, None
+    data_path = os.path.join(RAW_DIR, data_file)
+    zone_path = os.path.join(DATA_DIR, zone_file)
+    dp = DataProcessor(data=data_path, loc_zone=zone_path)
     dp.filter_pickup_location('Manhattan')
     dp.filter_dropoff_location('Manhattan')
     dp.filter_pickup_time(start=8, end=9)
@@ -183,3 +190,32 @@ if __name__ == '__main__':
         for do in do_lst:
             aam.loc[pu, do] = get_average_arrival_time(dat, pu, do)
             iat.loc[pu, do] = get_interarrival_time(dat, aam.loc[pu, do], pu, do)
+
+    if year is not None and month is not None:
+        aam.to_csv(os.path.join(AAM_DIR, f'aam-{year}-{month}.csv'), na_rep='NA', line_terminator='\n')
+        iat.to_csv(os.path.join(ATM_DIR, f'atm-{year}-{month}.csv'), na_rep='NA', line_terminator='\n')
+    else:
+        aam.to_csv(os.path.join(AAM_DIR, f'aam-{data_file}.csv'), na_rep='NA', line_terminator='\n')
+        iat.to_csv(os.path.join(ATM_DIR, f'atm-{data_file}.csv'), na_rep='NA', line_terminator='\n')
+
+
+def parse_date_from_filename(fname):
+    date_par = re.compile(r'\d\d\d\d-\d\d')
+    se = date_par.search(fname)
+    if se is not None:
+        seg = se.string.split('-')
+        year = seg[0]
+        month = seg[1]
+    else:
+        raise ValueError('No date in file name')
+    return year, month
+
+
+if __name__ == '__main__':
+    from download_data import download_file_parallel, RAW_DIR, DATA_DIR, AAM_DIR, ATM_DIR
+    import multiprocessing as mp
+
+    data_files, zone_file = download_file_parallel(4)
+    items = [(df, zone_file) for df in data_files]
+    with mp.Pool(mp.cpu_count()) as pool:
+        pool.starmap(data_process_routine, items)
