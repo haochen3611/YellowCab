@@ -2,8 +2,14 @@ import pandas as pd
 from typing import Union
 import numpy as np
 import os
+import glob
 import re
 import time
+import argparse as ap
+from util import download_file_parallel, \
+        DATA_DIR, AAM_DIR, ATM_DIR, set_destination, parse_date_from_filename, \
+    get_csv_file_from_dir, filter_csv_file_by_time
+import multiprocessing as mp
 
 
 FILE = 'data/raw/yellow_tripdata_2019-12.csv'
@@ -168,7 +174,7 @@ def get_interarrival_time(data: pd.DataFrame, aam: float, pickup: int, dropoff: 
     return trip_time.mean()
 
 
-def data_process_routine(data_file, zone_file):
+def data_process_routine(data_file, zone_file, weekday=True, start_time=0, location='Manhattan'):
     try:
         year, month = parse_date_from_filename(data_file)
     except ValueError:
@@ -176,10 +182,10 @@ def data_process_routine(data_file, zone_file):
     data_path = os.path.join(RAW_DIR, data_file)
     zone_path = os.path.join(DATA_DIR, zone_file)
     dp = DataProcessor(data=data_path, loc_zone=zone_path)
-    dp.filter_pickup_location('Manhattan')
-    dp.filter_dropoff_location('Manhattan')
-    dp.filter_pickup_time(start=8, end=9)
-    dp.filter_weekday()
+    dp.filter_pickup_location(location)
+    dp.filter_dropoff_location(location)
+    dp.filter_pickup_time(start=start_time, end=start_time+1)
+    dp.filter_weekday(weekend=not weekday)
 
     dat = dp.data
     pu_lst = dat.PULocationID.unique()
@@ -190,31 +196,24 @@ def data_process_routine(data_file, zone_file):
         for do in do_lst:
             aam.loc[pu, do] = get_average_arrival_time(dat, pu, do)
             iat.loc[pu, do] = get_interarrival_time(dat, aam.loc[pu, do], pu, do)
+    wkd = 'wd' if weekday else 'we'
 
     if year is not None and month is not None:
-        aam.to_csv(os.path.join(AAM_DIR, f'aam-{year}-{month}.csv'), na_rep='NA', line_terminator='\n')
-        iat.to_csv(os.path.join(ATM_DIR, f'atm-{year}-{month}.csv'), na_rep='NA', line_terminator='\n')
+        aam.to_csv(os.path.join(AAM_DIR, f'aam-{year}-{month}-{start_time}-{wkd}.csv'),
+                   na_rep='NA', line_terminator='\n')
+        iat.to_csv(os.path.join(ATM_DIR, f'atm-{year}-{month}-{start_time}-{wkd}.csv'),
+                   na_rep='NA', line_terminator='\n')
         lock.acquire()
         print(f'{year}-{month}-done!')
         lock.release()
     else:
-        aam.to_csv(os.path.join(AAM_DIR, f'aam-{data_file}.csv'), na_rep='NA', line_terminator='\n')
-        iat.to_csv(os.path.join(ATM_DIR, f'atm-{data_file}.csv'), na_rep='NA', line_terminator='\n')
+        aam.to_csv(os.path.join(AAM_DIR, f'aam-{data_file}-{start_time}-{wkd}.csv'),
+                   na_rep='NA', line_terminator='\n')
+        iat.to_csv(os.path.join(ATM_DIR, f'atm-{data_file}-{start_time}-{wkd}.csv'),
+                   na_rep='NA', line_terminator='\n')
         lock.acquire()
         print(f'{data_file}-done!')
         lock.release()
-
-
-def parse_date_from_filename(fname):
-    date_par = re.compile(r'\d\d\d\d-\d\d')
-    se = date_par.search(fname)
-    if se is not None:
-        seg = se.string.split('-')
-        year = seg[0]
-        month = seg[1]
-    else:
-        raise ValueError('No date in file name')
-    return year, month
 
 
 def init(lk):
@@ -223,12 +222,35 @@ def init(lk):
 
 
 if __name__ == '__main__':
-    from download_data import download_file_parallel, RAW_DIR, DATA_DIR, AAM_DIR, ATM_DIR
-    import multiprocessing as mp
 
-    lk_ = mp.Lock()
-    data_files, zone_file_ = download_file_parallel(4)
-    items = [(df, zone_file_) for df in data_files]
-    with mp.Pool(mp.cpu_count(),
-                 initializer=init, initargs=(lk_, )) as pool:
-        pool.starmap(data_process_routine, items)
+    par = ap.ArgumentParser(prog='data processor', description='CLI input to data processor')
+    par.add_argument('--dest', nargs='?', metavar='<RAW DATA DIR>', type=str, default=None)
+    par.add_argument('--dl_threads', nargs='?', metavar='<DOWNLOAD THREADS>', type=int, default=2)
+    par.add_argument('--dp_threads', nargs='?', metavar='<PROCESS THREADS>', type=int, default=mp.cpu_count())
+    par.add_argument('--dp', nargs='?', action='store_true', default=False, dest='run_dp')
+    par.add_argument('--dl', nargs='?', action='store_true', default=False, dest='run_dl')
+
+    arg = par.parse_args()
+
+    dest = arg.dest
+    RAW_DIR = set_destination(dest)
+
+    if arg.run_dp:
+        if arg.run_dl:
+            data_files, zone_file_ = download_file_parallel(arg.dl_threads)
+        else:
+            data_files = get_csv_file_from_dir(RAW_DIR)
+            zone_file_ = 'taxi+_zone_lookup.csv'
+        lk_ = mp.Lock()
+        items = []
+        for df in data_files:
+            for hr in range(24):
+                for wd in [True, False]:
+                    items.append((df, zone_file_, wd, hr))
+
+        with mp.Pool(arg.dp_threads,
+                     initializer=init, initargs=(lk_, )) as pool:
+            pool.starmap(data_process_routine, items)
+    else:
+        if arg.run_dl:
+            download_file_parallel(arg.dl_threads)

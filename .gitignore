@@ -3,4 +3,5 @@ venv
 env
 data
 __pycache__
-/log/
+log/
+logs/
