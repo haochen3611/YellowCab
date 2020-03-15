@@ -4,6 +4,7 @@ import re
 import multiprocessing as mp
 import time
 import os
+import sys
 import glob
 
 
@@ -28,7 +29,7 @@ if not os.path.exists(AAM_DIR):
 if not os.path.exists(ATM_DIR):
     os.makedirs(ATM_DIR)
 
-LOG = os.path.join(LOG_DIR, f'download-{time.time()}.log')
+LOG = os.path.join(LOG_DIR, f'download-{int(time.time())}.log')
 
 
 def parse_date_from_filename(fname):
@@ -43,10 +44,12 @@ def parse_date_from_filename(fname):
     return year, month
 
 
-def get_csv_file_from_dir(directory):
+def get_csv_file_from_dir(directory, relative=None):
     assert os.path.isdir(directory), 'Not a directory or not exist'
     directory = os.path.realpath(directory)
     files = glob.glob(os.path.join(directory, '*.csv'))
+    if relative is not None:
+        files = [os.path.relpath(f, relative) for f in files]
     return files
 
 
@@ -117,8 +120,12 @@ def get_download_path(source):
 
 def download_file(url, target_dir):
     name = url.split('/')[-1]
+    check_path = os.path.join(target_dir, name)
+    if os.path.isfile(check_path) and os.path.getsize(check_path) > 0:
+        print(name + '...Exists\n')
+        return name
+    print(name + '...Started\n')
     file = requests.get(url, stream=False)
-
     try:
         assert file.status_code == 200
     except AssertionError:
@@ -132,9 +139,11 @@ def download_file(url, target_dir):
             with open(LOG, 'a') as f:
                 f.write(name + f'...{err}\n')
             print(name + f'...{err}\n')
-        else:
+        except Exception as err:
             with open(LOG, 'a') as f:
-                f.write(name + '...OK\n')
+                f.write(name + f'...{sys.exc_info()[0]}: {err}\n')
+            print(name + f'...{sys.exc_info()[0]}: {err}\n')
+        else:
             print(name + '...OK\n')
         return name
 
@@ -153,6 +162,5 @@ def download_file_parallel(num_core, destination=None):
 
 
 if __name__ == '__main__':
-    rt = get_download_path(URL)
-    rt = filter_csv_file_by_time(rt[0], year=2010, month=1)
-    print(rt)
+    rt = get_csv_file_from_dir(RAW_DIR, relative=RAW_DIR)
+

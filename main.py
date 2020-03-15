@@ -2,11 +2,12 @@ import pandas as pd
 from typing import Union
 import numpy as np
 import os
+import sys
 import glob
 import re
 import time
 import argparse as ap
-from util import download_file_parallel, \
+from util import download_file_parallel, LOG_DIR, \
         DATA_DIR, AAM_DIR, ATM_DIR, set_destination, parse_date_from_filename, \
         get_csv_file_from_dir, filter_csv_file_by_time
 import multiprocessing as mp
@@ -14,6 +15,11 @@ import multiprocessing as mp
 
 FILE = 'data/raw/yellow_tripdata_2019-12.csv'
 ZONE = 'data/taxi+_zone_lookup.csv'
+LOG = os.path.join(LOG_DIR, f'process-{int(time.time())}.log')
+
+
+class ColumnNotFoundError(KeyError):
+    pass
 
 
 class DataProcessor:
@@ -23,6 +29,8 @@ class DataProcessor:
                'dropoff_datetime': 'tpep_dropoff_datetime',
                'Trip_Dropoff_DateTime': 'tpep_dropoff_datetime',
                'Trip_Distance': 'trip_distance'}
+    COL = ['tpep_pickup_datetime', 'tpep_dropoff_datetime', 'trip_distance',
+           'PULocationID', 'DOLocationID']
 
     def __init__(self, data: Union[str, pd.DataFrame], **kwargs):
         assert isinstance(data, (str, pd.DataFrame)), f'invalid file type: {type(data)}, need \'str\' or \'dataframe\''
@@ -67,6 +75,9 @@ class DataProcessor:
 
     def _simple_process(self):
         self._data = self._data.rename(columns=self.COL_MAP)
+        for c in self.COL:
+            if c not in self._data.columns:
+                raise ColumnNotFoundError(f'{c} not exist')
         self._data.loc[:, 'tpep_pickup_datetime'] = pd.to_datetime(self.data.loc[:, 'tpep_pickup_datetime'])
         self._data.loc[:, 'tpep_dropoff_datetime'] = pd.to_datetime((self.data.loc[:, 'tpep_dropoff_datetime']))
         self._data.loc[:, 'trip_time'] = (self._data.tpep_dropoff_datetime - self._data.tpep_pickup_datetime)\
@@ -185,38 +196,48 @@ def data_process_routine(data_file, zone_file, weekday=True, start_time=0, locat
         year, month = parse_date_from_filename(data_file)
     except ValueError:
         year, month = None, None
+    wkd = 'wd' if weekday else 'wn'
     data_path = os.path.join(RAW_DIR, data_file)
     zone_path = os.path.join(DATA_DIR, zone_file)
-    dp = DataProcessor(data=data_path, loc_zone=zone_path)
-    dp.filter_pickup_location(location)
-    dp.filter_dropoff_location(location)
-    dp.filter_pickup_time(start=start_time, end=start_time+1)
-    dp.filter_weekday(weekend=not weekday)
-
-    dat = dp.data
-    pu_lst = dat.PULocationID.unique()
-    do_lst = dat.DOLocationID.unique()
-    aam = pd.DataFrame(index=pu_lst, columns=do_lst)
-    iat = pd.DataFrame(index=pu_lst, columns=do_lst)
-    for pu in pu_lst:
-        for do in do_lst:
-            aam.loc[pu, do] = get_average_arrival_time(dat, pu, do)
-            iat.loc[pu, do] = get_interarrival_time(dat, aam.loc[pu, do], pu, do)
-    wkd = 'wd' if weekday else 'wn'
-
-    if year is not None and month is not None:
-        aam.to_csv(os.path.join(AAM_DIR, f'aam-{year}-{month}-{start_time}-{wkd}.csv'),
-                   na_rep='NA', line_terminator='\n')
-        iat.to_csv(os.path.join(ATM_DIR, f'atm-{year}-{month}-{start_time}-{wkd}.csv'),
-                   na_rep='NA', line_terminator='\n')
+    try:
+        dp = DataProcessor(data=data_path, loc_zone=zone_path)
+        dp.filter_pickup_location(location)
+        dp.filter_dropoff_location(location)
+        dp.filter_pickup_time(start=start_time, end=start_time+1)
+        dp.filter_weekday(weekend=not weekday)
+    except ColumnNotFoundError as err:
         lock.acquire()
-        print(f'{year}-{month}-{start_time}-{wkd}...done!')
+        with open(LOG, 'a') as f:
+            f.write(f'{data_file}-{start_time}-{wkd}' + f'...{err}')
+        print(f'{data_file}-{start_time}-{wkd}' + f'...{err}')
+        lock.release()
+    except Exception as err:
+        lock.acquire()
+        with open(LOG, 'a') as f:
+            f.write(f'{data_file}-{start_time}-{wkd}' + f'...{sys.exc_info()[0]}: {err}')
+        print(f'{data_file}-{start_time}-{wkd}' + f'...{sys.exc_info()[0]}: {err}')
         lock.release()
     else:
-        aam.to_csv(os.path.join(AAM_DIR, f'aam-{data_file}-{start_time}-{wkd}.csv'),
-                   na_rep='NA', line_terminator='\n')
-        iat.to_csv(os.path.join(ATM_DIR, f'atm-{data_file}-{start_time}-{wkd}.csv'),
-                   na_rep='NA', line_terminator='\n')
+        dat = dp.data
+        pu_lst = dat.PULocationID.unique()
+        do_lst = dat.DOLocationID.unique()
+        aam = pd.DataFrame(index=pu_lst, columns=do_lst)
+        iat = pd.DataFrame(index=pu_lst, columns=do_lst)
+        for pu in pu_lst:
+            for do in do_lst:
+                aam.loc[pu, do] = get_average_arrival_time(dat, pu, do)
+                iat.loc[pu, do] = get_interarrival_time(dat, aam.loc[pu, do], pu, do)
+
+        if year is not None and month is not None:
+            aam.to_csv(os.path.join(AAM_DIR, f'aam-{year}-{month}-{start_time}-{wkd}.csv'),
+                       na_rep='NA', line_terminator='\n')
+            iat.to_csv(os.path.join(ATM_DIR, f'atm-{year}-{month}-{start_time}-{wkd}.csv'),
+                       na_rep='NA', line_terminator='\n')
+        else:
+            aam.to_csv(os.path.join(AAM_DIR, f'aam-{data_file}-{start_time}-{wkd}.csv'),
+                       na_rep='NA', line_terminator='\n')
+            iat.to_csv(os.path.join(ATM_DIR, f'atm-{data_file}-{start_time}-{wkd}.csv'),
+                       na_rep='NA', line_terminator='\n')
         lock.acquire()
         print(f'{data_file}-{start_time}-{wkd}...done!')
         lock.release()
@@ -245,7 +266,7 @@ if __name__ == '__main__':
         if arg.run_dl:
             data_files, zone_file_ = download_file_parallel(arg.dl_threads)
         else:
-            data_files = get_csv_file_from_dir(RAW_DIR)
+            data_files = get_csv_file_from_dir(RAW_DIR, relative=RAW_DIR)
             zone_file_ = 'taxi+_zone_lookup.csv'
         lk_ = mp.Lock()
         items = []
