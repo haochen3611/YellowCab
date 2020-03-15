@@ -9,16 +9,21 @@ import time
 import argparse as ap
 from util import download_file_parallel, LOG_DIR, \
         DATA_DIR, AAM_DIR, ATM_DIR, set_destination, parse_date_from_filename, \
-        get_csv_file_from_dir, filter_csv_file_by_time
+        get_csv_file_from_dir, filter_csv_file_by_time, read_parser_error, handle_parser_error
 import multiprocessing as mp
 
 
 FILE = 'data/raw/yellow_tripdata_2019-12.csv'
 ZONE = 'data/taxi+_zone_lookup.csv'
 LOG = os.path.join(LOG_DIR, f'process-{int(time.time())}.log')
+BAD_LINE = os.path.join(LOG_DIR, f'bad_line-{int(time.time())}.log')
 
 
 class ColumnNotFoundError(KeyError):
+    pass
+
+
+class BadLineError(ValueError):
     pass
 
 
@@ -35,10 +40,17 @@ class DataProcessor:
     def __init__(self, data: Union[str, pd.DataFrame], **kwargs):
         assert isinstance(data, (str, pd.DataFrame)), f'invalid file type: {type(data)}, need \'str\' or \'dataframe\''
         if isinstance(data, str):
-            data = pd.read_csv(data, low_memory=False, index_col=False)
-            assert isinstance(data, pd.DataFrame)
-        self._data = data
-        self._raw = data.copy()
+            try:
+                data_ = pd.read_csv(data, low_memory=False, index_col=False)
+            except pd.errors.ParserError as err:
+                bad_line = handle_parser_error(data, err)
+                raise BadLineError(bad_line)
+            else:
+                assert isinstance(data_, pd.DataFrame)
+                self._data = data_
+        else:
+            self._data = data
+        self._raw = self._data.copy()
 
         try:
             self._loc_zone_table = kwargs.pop('loc_zone')
@@ -194,8 +206,9 @@ def get_interarrival_time(data: pd.DataFrame, aam: float, pickup: int, dropoff: 
 def data_process_routine(data_file, zone_file, weekday=True, start_time=0, location='Manhattan'):
     try:
         year, month = parse_date_from_filename(data_file)
+        name = f'{year}-{month}'
     except ValueError:
-        year, month = None, None
+        name = data_file.split('/')[-1].split('.')[0]
     wkd = 'wd' if weekday else 'wn'
     data_path = os.path.join(RAW_DIR, data_file)
     zone_path = os.path.join(DATA_DIR, zone_file)
@@ -205,17 +218,16 @@ def data_process_routine(data_file, zone_file, weekday=True, start_time=0, locat
         dp.filter_dropoff_location(location)
         dp.filter_pickup_time(start=start_time, end=start_time+1)
         dp.filter_weekday(weekend=not weekday)
-    except ColumnNotFoundError as err:
+    except BadLineError as err:
         lock.acquire()
-        with open(LOG, 'a') as f:
-            f.write(f'{data_file}-{start_time}-{wkd}' + f'...{err}')
-        print(f'{data_file}-{start_time}-{wkd}' + f'...{err}')
+        with open(BAD_LINE, 'a') as f:
+            f.write(f'{name}-' + str(err))
         lock.release()
     except Exception as err:
         lock.acquire()
         with open(LOG, 'a') as f:
-            f.write(f'{data_file}-{start_time}-{wkd}' + f'...{sys.exc_info()[0]}: {err}')
-        print(f'{data_file}-{start_time}-{wkd}' + f'...{sys.exc_info()[0]}: {err}')
+            f.write(f'{name}-{start_time}-{wkd}' + f'...{sys.exc_info()[0]}: {err}\n')
+        print(f'{name}-{start_time}-{wkd}' + f'...{sys.exc_info()[0]}: {err}')
         lock.release()
     else:
         dat = dp.data
@@ -228,18 +240,13 @@ def data_process_routine(data_file, zone_file, weekday=True, start_time=0, locat
                 aam.loc[pu, do] = get_average_arrival_time(dat, pu, do)
                 iat.loc[pu, do] = get_interarrival_time(dat, aam.loc[pu, do], pu, do)
 
-        if year is not None and month is not None:
-            aam.to_csv(os.path.join(AAM_DIR, f'aam-{year}-{month}-{start_time}-{wkd}.csv'),
-                       na_rep='NA', line_terminator='\n')
-            iat.to_csv(os.path.join(ATM_DIR, f'atm-{year}-{month}-{start_time}-{wkd}.csv'),
-                       na_rep='NA', line_terminator='\n')
-        else:
-            aam.to_csv(os.path.join(AAM_DIR, f'aam-{data_file}-{start_time}-{wkd}.csv'),
-                       na_rep='NA', line_terminator='\n')
-            iat.to_csv(os.path.join(ATM_DIR, f'atm-{data_file}-{start_time}-{wkd}.csv'),
-                       na_rep='NA', line_terminator='\n')
+        aam.to_csv(os.path.join(AAM_DIR, f'aam-{name}-{start_time}-{wkd}.csv'),
+                   na_rep='NA', line_terminator='\n')
+        iat.to_csv(os.path.join(ATM_DIR, f'atm-{name}-{start_time}-{wkd}.csv'),
+                   na_rep='NA', line_terminator='\n')
+
         lock.acquire()
-        print(f'{data_file}-{start_time}-{wkd}...done!')
+        print(f'{name}-{start_time}-{wkd}...done!')
         lock.release()
 
 

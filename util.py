@@ -6,6 +6,8 @@ import time
 import os
 import sys
 import glob
+from itertools import islice
+from typing import TextIO
 
 
 URL = "https://nyc-tlc.s3.amazonaws.com/"
@@ -33,12 +35,11 @@ LOG = os.path.join(LOG_DIR, f'download-{int(time.time())}.log')
 
 
 def parse_date_from_filename(fname):
-    date_par = re.compile(r'\d\d\d\d-\d\d')
+    date_par = re.compile(r'(?P<year>\d\d\d\d)-(?P<month>\d\d)')
     se = date_par.search(fname)
     if se is not None:
-        seg = se.string.split('-')
-        year = seg[0]
-        month = seg[1]
+        year = se.group('year')
+        month = se.group('month')
     else:
         raise ValueError('No date in file name')
     return year, month
@@ -82,6 +83,31 @@ def filter_csv_file_by_time(files, **kwargs):
         if sr is not None:
             results.append(ff)
     return results
+
+
+def read_parser_error(error):
+    error = str(error)
+    par = re.compile(r'Expected\s(?P<expect>\d+)\sfields\sin\sline\s(?P<line>\d+),\ssaw\s(?P<saw>\d+)')
+    se = par.search(error)
+    if se is None:
+        return
+    res = dict()
+    res['expect'] = int(se.group('expect'))
+    res['line'] = int(se.group('line'))
+    res['saw'] = int(se.group('saw'))
+    return res
+
+
+def handle_parser_error(file: str, err_info: dict):
+    file = open(file, 'r')
+    lineno = read_parser_error(err_info).pop('line')
+    try:
+        line = next(islice(file, lineno-1, lineno))
+    except StopIteration:
+        raise TypeError(f'No line {lineno} exists in file')
+    finally:
+        file.close()
+    return line
 
 
 def set_destination(dest):
@@ -135,10 +161,6 @@ def download_file(url, target_dir):
         try:
             with open(os.path.join(target_dir, name), 'wb') as f:
                 f.write(file.content)
-        except OSError as err:
-            with open(LOG, 'a') as f:
-                f.write(name + f'...{err}\n')
-            print(name + f'...{err}')
         except Exception as err:
             with open(LOG, 'a') as f:
                 f.write(name + f'...{sys.exc_info()[0]}: {err}\n')
@@ -162,5 +184,20 @@ def download_file_parallel(num_core, destination=None):
 
 
 if __name__ == '__main__':
-    rt = get_csv_file_from_dir(RAW_DIR, relative=RAW_DIR)
-
+    # rt = get_download_path(URL)
+    # rt = filter_csv_file_by_time(rt[0], year=2010, month=3)
+    # for ff in rt:
+    #     download_file(ff, RAW_DIR)
+    import pandas as pd
+    f = open('data/raw/yellow_tripdata_2010-03.csv', 'r')
+    try:
+        pd.read_csv(f)
+    except pd.errors.ParserError as err:
+        f.close()
+        f = open('data/raw/yellow_tripdata_2010-03.csv', 'r')
+        print(err)
+        dd = read_parser_error(err)
+        l = handle_parser_error(f, dd)
+        print(l)
+        print(len(l.split(',')))
+    f.close()
