@@ -122,9 +122,9 @@ def download_file(url, target_dir):
     name = url.split('/')[-1]
     check_path = os.path.join(target_dir, name)
     if os.path.isfile(check_path) and os.path.getsize(check_path) > 0:
-        print(name + '...Exists\n')
+        print(name + '...Exists')
         return name
-    print(name + '...Started\n')
+    print(name + '...Started')
     file = requests.get(url, stream=False)
     try:
         assert file.status_code == 200
@@ -138,13 +138,13 @@ def download_file(url, target_dir):
         except OSError as err:
             with open(LOG, 'a') as f:
                 f.write(name + f'...{err}\n')
-            print(name + f'...{err}\n')
+            print(name + f'...{err}')
         except Exception as err:
             with open(LOG, 'a') as f:
                 f.write(name + f'...{sys.exc_info()[0]}: {err}\n')
-            print(name + f'...{sys.exc_info()[0]}: {err}\n')
+            print(name + f'...{sys.exc_info()[0]}: {err}')
         else:
-            print(name + '...OK\n')
+            print(name + '...OK')
         return name
 
 
