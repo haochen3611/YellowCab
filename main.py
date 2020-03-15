@@ -281,3 +281,5 @@ if __name__ == '__main__':
     else:
         if arg.run_dl:
             download_file_parallel(arg.dl_threads)
+
+    print('done!')
