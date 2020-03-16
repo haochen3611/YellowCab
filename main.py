@@ -298,7 +298,7 @@ if __name__ == '__main__':
         lk_ = mp.Lock()
         items = []
         for df in data_files:
-            for hr in [8, ]:
+            for hr in range(24):
                 for wd in [True, False]:
                     items.append((df, zone_file_, wd, hr))
 
