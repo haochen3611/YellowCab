@@ -134,13 +134,20 @@ class DataProcessor:
 
             assert location in self._loc_zone_table.keys(), \
                 f'Unknown location: {location}, must be in {self._loc_zone_table.keys()}'
-            filtered = self._data.loc[self._data['PULocationID'].isin(self._loc_zone_table[location])]
+            filtered = self._data.loc[self._data[column].isin(self._loc_zone_table[location])]
         else:
-            if self._data.loc['PULocationID'].dtype == 'int64':
-                filtered = self._data.loc[self._data['PULocationID'] == location]
+            if self._data[column].dtype == 'int64':
+                filtered = self._data.loc[self._data[column] == location]
             else:
-                filtered = self._data.loc[self._data['PULocationID'].astype('int64') == location]
+                filtered = self._data.loc[self._data[column].astype('int64') == location]
         return filtered
+
+    def filter_demand(self, low_bd: int, inplace: bool = True):
+        assert isinstance(low_bd, int), f'invalid \'low_bd\' type: {type(low_bd)}, need \'int\''
+        filtered = self._data.groupby(by='PULocationID').filter(lambda x: len(x.index) > low_bd)
+        if not inplace:
+            return self._return(filtered)
+        self._data = filtered
 
     def filter_pickup_location(self, location: Union[str, int], inplace: bool = True, **kwargs):
         filtered = self._filter_location(location, 'PULocationID', **kwargs)
@@ -190,7 +197,8 @@ def get_average_arrival_time(data: pd.DataFrame, pickup: int, dropoff: int):
     pickup = data.loc[:, 'PULocationID'] == pickup
     dropoff = data.loc[:, 'DOLocationID'] == dropoff
     selected = data.loc[pickup & dropoff]
-    num_days = len(selected.tpep_pickup_datetime.unique())
+    day_lst = selected.tpep_pickup_datetime.apply(lambda x: x.day)
+    num_days = len(day_lst.unique())
     num_trips = len(selected.index)
     if num_days > num_trips or num_trips < 1:
         return np.nan
@@ -219,10 +227,11 @@ def data_process_routine(data_file, zone_file, weekday=True, start_time=0, locat
     zone_path = os.path.join(DATA_DIR, zone_file)
     try:
         dp = DataProcessor(data=data_path, loc_zone=zone_path)
+        dp.filter_pickup_time(start=start_time, end=start_time+1)
         dp.filter_pickup_location(location)
         dp.filter_dropoff_location(location)
-        dp.filter_pickup_time(start=start_time, end=start_time+1)
         dp.filter_weekday(weekend=not weekday)
+        dp.filter_demand(low_bd=100)
     except BadLineError as err:
         lock.acquire()
         with open(BAD_LINE, 'a') as f:
@@ -237,14 +246,17 @@ def data_process_routine(data_file, zone_file, weekday=True, start_time=0, locat
     else:
         dat = dp.data
         pu_lst = dat.PULocationID.unique()
-        do_lst = dat.DOLocationID.unique()
-        aam = pd.DataFrame(index=pu_lst, columns=do_lst)
-        iat = pd.DataFrame(index=pu_lst, columns=do_lst)
+        # do_lst = dat.DOLocationID.unique()
+        aam = pd.DataFrame(index=pu_lst, columns=pu_lst)
+        iat = pd.DataFrame(index=pu_lst, columns=pu_lst)
         for pu in pu_lst:
-            for do in do_lst:
+            for do in pu_lst:
                 aam.loc[pu, do] = get_average_arrival_time(dat, pu, do)
                 iat.loc[pu, do] = get_interarrival_time(dat, aam.loc[pu, do], pu, do)
-
+        aam = aam.sort_index(0)
+        aam = aam.reindex(sorted(aam.columns, key=lambda x: int(x)), axis=1)
+        iat = iat.sort_index(0)
+        iat = iat.reindex(sorted(iat.columns, key=lambda x: int(x)), axis=1)
         aam.to_csv(os.path.join(AAM_DIR, f'aam-{name}-{wkd}-{start_time}.csv'),
                    na_rep='NA', line_terminator='\n')
         iat.to_csv(os.path.join(ATM_DIR, f'atm-{name}-{wkd}-{start_time}.csv'),
@@ -265,7 +277,7 @@ if __name__ == '__main__':
     par = ap.ArgumentParser(prog='data processor', description='CLI input to data processor')
     par.add_argument('--dest', nargs='?', metavar='<RAW DATA DIR>', type=str, default=None)
     par.add_argument('--dl_threads', nargs='?', metavar='<DOWNLOAD THREADS>', type=int, default=2)
-    par.add_argument('--dp_threads', nargs='?', metavar='<PROCESS THREADS>', type=int, default=mp.cpu_count())
+    par.add_argument('--dp_threads', nargs='?', metavar='<PROCESS THREADS>', type=int, default=4)
     par.add_argument('--dp', action='store_true', default=False, dest='run_dp')
     par.add_argument('--dl', action='store_true', default=False, dest='run_dl')
     par.add_argument('--year', nargs='?', metavar='<YEAR>', type=int, default=-1)
@@ -286,13 +298,14 @@ if __name__ == '__main__':
         lk_ = mp.Lock()
         items = []
         for df in data_files:
-            for hr in range(24):
+            for hr in [8, ]:
                 for wd in [True, False]:
                     items.append((df, zone_file_, wd, hr))
 
         with mp.Pool(arg.dp_threads,
                      initializer=init, initargs=(lk_, )) as pool:
             pool.starmap(data_process_routine, items)
+        # data_process_routine(data_files[0], zone_file_, True, 8)
     else:
         if arg.run_dl:
             download_file_parallel(arg.dl_threads)
