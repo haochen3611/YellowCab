@@ -9,7 +9,7 @@ import time
 import argparse as ap
 from util import download_file_parallel, LOG_DIR, \
         DATA_DIR, AAM_DIR, ATM_DIR, set_destination, parse_date_from_filename, \
-        get_csv_file_from_dir, filter_csv_file_by_time, read_parser_error, handle_parser_error
+        get_csv_file_from_dir, filter_csv_file_by_time, handle_parser_error
 import multiprocessing as mp
 
 
@@ -30,10 +30,15 @@ class BadLineError(ValueError):
 class DataProcessor:
     DTYPE = []
     COL_MAP = {'pickup_datetime': 'tpep_pickup_datetime',
+               ' pickup_datetime': 'tpep_pickup_datetime',
                'Trip_Pickup_DateTime': 'tpep_pickup_datetime',
+               ' Trip_Pickup_DateTime': 'tpep_pickup_datetime',
                'dropoff_datetime': 'tpep_dropoff_datetime',
+               ' dropoff_datetime': 'tpep_dropoff_datetime',
                'Trip_Dropoff_DateTime': 'tpep_dropoff_datetime',
-               'Trip_Distance': 'trip_distance'}
+               ' Trip_Dropoff_DateTime': 'tpep_dropoff_datetime',
+               'Trip_Distance': 'trip_distance',
+               ' Trip_Distance': 'trip_distance'}
     COL = ['tpep_pickup_datetime', 'tpep_dropoff_datetime', 'trip_distance',
            'PULocationID', 'DOLocationID']
 
@@ -226,8 +231,8 @@ def data_process_routine(data_file, zone_file, weekday=True, start_time=0, locat
     except Exception as err:
         lock.acquire()
         with open(LOG, 'a') as f:
-            f.write(f'{name}-{start_time}-{wkd}' + f'...{sys.exc_info()[0]}: {err}\n')
-        print(f'{name}-{start_time}-{wkd}' + f'...{sys.exc_info()[0]}: {err}')
+            f.write(f'{name}-{wkd}-{start_time}' + f'...{sys.exc_info()[0]}: {err}\n')
+        print(f'{name}-{wkd}-{start_time}' + f'...{sys.exc_info()[0]}: {err}')
         lock.release()
     else:
         dat = dp.data
@@ -240,13 +245,13 @@ def data_process_routine(data_file, zone_file, weekday=True, start_time=0, locat
                 aam.loc[pu, do] = get_average_arrival_time(dat, pu, do)
                 iat.loc[pu, do] = get_interarrival_time(dat, aam.loc[pu, do], pu, do)
 
-        aam.to_csv(os.path.join(AAM_DIR, f'aam-{name}-{start_time}-{wkd}.csv'),
+        aam.to_csv(os.path.join(AAM_DIR, f'aam-{name}-{wkd}-{start_time}.csv'),
                    na_rep='NA', line_terminator='\n')
-        iat.to_csv(os.path.join(ATM_DIR, f'atm-{name}-{start_time}-{wkd}.csv'),
+        iat.to_csv(os.path.join(ATM_DIR, f'atm-{name}-{wkd}-{start_time}.csv'),
                    na_rep='NA', line_terminator='\n')
 
         lock.acquire()
-        print(f'{name}-{start_time}-{wkd}...done!')
+        print(f'{name}-{wkd}-{start_time}...done!')
         lock.release()
 
 
@@ -263,6 +268,7 @@ if __name__ == '__main__':
     par.add_argument('--dp_threads', nargs='?', metavar='<PROCESS THREADS>', type=int, default=mp.cpu_count())
     par.add_argument('--dp', action='store_true', default=False, dest='run_dp')
     par.add_argument('--dl', action='store_true', default=False, dest='run_dl')
+    par.add_argument('--year', nargs='?', metavar='<YEAR>', type=int, default=-1)
 
     arg = par.parse_args()
 
@@ -275,6 +281,8 @@ if __name__ == '__main__':
         else:
             data_files = get_csv_file_from_dir(RAW_DIR, relative=RAW_DIR)
             zone_file_ = 'taxi+_zone_lookup.csv'
+        if arg.year != -1:
+            data_files = filter_csv_file_by_time(data_files, year=arg.year)
         lk_ = mp.Lock()
         items = []
         for df in data_files:

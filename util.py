@@ -184,20 +184,23 @@ def download_file_parallel(num_core, destination=None):
 
 
 if __name__ == '__main__':
-    # rt = get_download_path(URL)
-    # rt = filter_csv_file_by_time(rt[0], year=2010, month=3)
-    # for ff in rt:
-    #     download_file(ff, RAW_DIR)
-    import pandas as pd
-    f = open('data/raw/yellow_tripdata_2010-03.csv', 'r')
-    try:
-        pd.read_csv(f)
-    except pd.errors.ParserError as err:
-        f.close()
-        f = open('data/raw/yellow_tripdata_2010-03.csv', 'r')
-        print(err)
-        dd = read_parser_error(err)
-        l = handle_parser_error(f, dd)
-        print(l)
-        print(len(l.split(',')))
-    f.close()
+    rt = get_download_path(URL)
+    sep_14 = filter_csv_file_by_time(rt[0], year=2014, month=9)
+    for ff in sep_14:
+        download_file(ff, RAW_DIR)
+    jul_16 = filter_csv_file_by_time(rt[0], year=2016, month=7)
+    for ff in jul_16:
+        download_file(ff, RAW_DIR)
+    # import pandas as pd
+    # f = open('data/raw/yellow_tripdata_2010-03.csv', 'r')
+    # try:
+    #     pd.read_csv(f)
+    # except pd.errors.ParserError as err:
+    #     f.close()
+    #     f = open('data/raw/yellow_tripdata_2010-03.csv', 'r')
+    #     print(err)
+    #     dd = read_parser_error(err)
+    #     l = handle_parser_error(f, dd)
+    #     print(l)
+    #     print(len(l.split(',')))
+    # f.close()
