@@ -9,7 +9,8 @@ import time
 import argparse as ap
 from util import download_file_parallel, LOG_DIR, \
         DATA_DIR, AAM_DIR, ATM_DIR, set_destination, parse_date_from_filename, \
-        get_csv_file_from_dir, filter_csv_file_by_time, handle_parser_error
+        get_csv_file_from_dir, filter_csv_file_by_time, handle_parser_error, \
+        BadLineError, ColumnNotFoundError
 import multiprocessing as mp
 
 
@@ -17,14 +18,6 @@ FILE = 'data/raw/yellow_tripdata_2019-12.csv'
 ZONE = 'data/taxi+_zone_lookup.csv'
 LOG = os.path.join(LOG_DIR, f'process-{int(time.time())}.log')
 BAD_LINE = os.path.join(LOG_DIR, f'bad_line-{int(time.time())}.log')
-
-
-class ColumnNotFoundError(KeyError):
-    pass
-
-
-class BadLineError(ValueError):
-    pass
 
 
 class DataProcessor:

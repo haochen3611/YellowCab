@@ -183,6 +183,14 @@ def download_file_parallel(num_core, destination=None):
     return data_names, zone_name
 
 
+class ColumnNotFoundError(KeyError):
+    pass
+
+
+class BadLineError(ValueError):
+    pass
+
+
 if __name__ == '__main__':
     rt = get_download_path(URL)
     sep_14 = filter_csv_file_by_time(rt[0], year=2014, month=9)
