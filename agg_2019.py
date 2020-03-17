@@ -8,7 +8,7 @@ import pandas as pd
 
 from main import DataProcessor
 from util import LOG_DIR, \
-    DATA_DIR, AAM_DIR, set_destination, parse_date_from_filename, \
+    DATA_DIR, AAM_DIR, ATM_DIR, set_destination, parse_date_from_filename, \
     get_csv_file_from_dir, filter_csv_file_by_time
 
 LOG = os.path.join(LOG_DIR, f'process-{int(time.time())}.log')
@@ -88,7 +88,7 @@ def combine_results(res: list, pu_lst):
             atm = atm.div(len(files_19))
             aam.to_csv(os.path.join(AAM_DIR, f'aam-2019-{wd_}-{hr_}.csv'),
                        na_rep='NA', line_terminator='\n')
-            atm.to_csv(os.path.join(AAM_DIR, f'atm-2019-{wd_}-{hr_}.csv'),
+            atm.to_csv(os.path.join(ATM_DIR, f'atm-2019-{wd_}-{hr_}.csv'),
                        na_rep='NA', line_terminator='\n')
 
 
