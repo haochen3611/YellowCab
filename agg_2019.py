@@ -59,9 +59,9 @@ def aggregate_year_data(data_file, zone_file, pu_lst, weekday=True, start_time=0
         return 0, 0, 0
     else:
         dat = dp.data
-        n_days = pd.DataFrame(index=pu_lst, columns=pu_lst)
-        n_trips = pd.DataFrame(index=pu_lst, columns=pu_lst)
-        atm = pd.DataFrame(index=pu_lst, columns=pu_lst)
+        n_days = pd.DataFrame(index=pu_lst, columns=pu_lst, data=0)
+        n_trips = pd.DataFrame(index=pu_lst, columns=pu_lst, data=0)
+        atm = pd.DataFrame(index=pu_lst, columns=pu_lst, data=0)
 
         for pu in pu_lst:
             for do in pu_lst:
@@ -96,7 +96,7 @@ if __name__ == '__main__':
 
     par = ap.ArgumentParser(prog='data processor', description='CLI input to data processor')
     par.add_argument('--dest', nargs='?', metavar='<RAW DATA DIR>', type=str, default=None)
-    par.add_argument('--dp_threads', nargs='?', metavar='<PROCESS THREADS>', type=int, default=4)
+    par.add_argument('--dp_threads', nargs='?', metavar='<PROCESS THREADS>', type=int, default=2)
 
     arg = par.parse_args()
 
