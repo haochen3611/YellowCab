@@ -1,16 +1,15 @@
-from main import DataProcessor
-from util import download_file_parallel, LOG_DIR, \
-        DATA_DIR, AAM_DIR, ATM_DIR, set_destination, parse_date_from_filename, \
-        get_csv_file_from_dir, filter_csv_file_by_time, handle_parser_error, \
-        BadLineError, ColumnNotFoundError
-import os
-import time
-import sys
-import pandas as pd
-import numpy as np
-import multiprocessing as mp
 import argparse as ap
+import multiprocessing as mp
+import os
+import sys
+import time
 
+import pandas as pd
+
+from main import DataProcessor
+from util import LOG_DIR, \
+    DATA_DIR, AAM_DIR, set_destination, parse_date_from_filename, \
+    get_csv_file_from_dir, filter_csv_file_by_time
 
 LOG = os.path.join(LOG_DIR, f'process-{int(time.time())}.log')
 
@@ -97,12 +96,15 @@ if __name__ == '__main__':
 
     par = ap.ArgumentParser(prog='data processor', description='CLI input to data processor')
     par.add_argument('--dest', nargs='?', metavar='<RAW DATA DIR>', type=str, default=None)
+    par.add_argument('--dp_threads', nargs='?', metavar='<PROCESS THREADS>', type=int, default=4)
+
     arg = par.parse_args()
 
     dest = arg.dest
     RAW_DIR = set_destination(dest)
 
     files_19 = get_csv_file_from_dir(RAW_DIR)
+    files_19 = filter_csv_file_by_time(files_19, year=2019)
     zone_file_ = 'taxi+_zone_lookup.csv'
     zone_table = pd.read_csv(os.path.join(DATA_DIR, zone_file_), low_memory=False, index_col=False)
     zone_gp = zone_table.groupby(by='Borough').groups
@@ -117,7 +119,7 @@ if __name__ == '__main__':
             for f in files_19:
                 item.append((f, zone_file_, man_id, wd, hr))
 
-    with mp.Pool(20) as pool:
+    with mp.Pool(arg.dp_threads) as pool:
         results = pool.starmap(aggregate_year_data, item)
 
     combine_results(results, man_id)

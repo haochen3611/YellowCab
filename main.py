@@ -1,18 +1,17 @@
-import pandas as pd
-from typing import Union
-import numpy as np
+import argparse as ap
+import multiprocessing as mp
 import os
 import sys
-import glob
-import re
 import time
-import argparse as ap
-from util import download_file_parallel, LOG_DIR, \
-        DATA_DIR, AAM_DIR, ATM_DIR, set_destination, parse_date_from_filename, \
-        get_csv_file_from_dir, filter_csv_file_by_time, handle_parser_error, \
-        BadLineError, ColumnNotFoundError
-import multiprocessing as mp
+from typing import Union
 
+import numpy as np
+import pandas as pd
+
+from util import download_file_parallel, LOG_DIR, \
+    DATA_DIR, AAM_DIR, ATM_DIR, set_destination, parse_date_from_filename, \
+    get_csv_file_from_dir, filter_csv_file_by_time, handle_parser_error, \
+    BadLineError, ColumnNotFoundError
 
 FILE = 'data/raw/yellow_tripdata_2019-12.csv'
 ZONE = 'data/taxi+_zone_lookup.csv'
